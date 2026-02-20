@@ -136,7 +136,7 @@ jobs:
         run: |
           # Pull out the block for this tag between its heading and the next
           TAG=${GITHUB_REF_NAME}
-          NOTES=$(awk "/^## \[?${TAG}\]?/{found=1; next} found && /^## /{exit} found{print}" CHANGELOG.md)
+          NOTES=$(awk "/^## \[?${TAG}\]?/{found=1; next} found && /^## /{exit} found{print}" ${{ github.workspace }}/CHANGELOG.md)
           if [ -z "$NOTES" ]; then
             NOTES="No changelog entry found for ${TAG}."
           fi
