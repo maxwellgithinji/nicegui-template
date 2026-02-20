@@ -3,6 +3,7 @@ name: Build Desktop Executables
 on:
   push:
     branches: [main, master]
+    tags: ["v*"]        # also run on version tags
   workflow_dispatch:
 
 jobs:
