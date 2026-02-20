@@ -1,0 +1,117 @@
+name: Build Desktop Executables
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:  # allow manual trigger from GitHub UI
+
+jobs:
+  # ── Ubuntu build ────────────────────────────────────────────────────────────
+  build-ubuntu:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system deps (GTK / WebKit for pywebview)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libwebkit2gtk-4.0-dev \
+            gir1.2-webkit2-4.0 \
+            python3-gi \
+            python3-gi-cairo \
+            libgirepository1.0-dev \
+            gcc libcairo2-dev pkg-config \
+            xvfb
+
+      - name: Install Python deps
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          # PyGObject must be installed into the pip env too for PyInstaller hooks
+          pip install PyGObject
+
+      - name: Build with PyInstaller
+        run: pyinstaller build.spec --clean
+
+      - name: Smoke-test binary exists
+        run: test -f dist/NiceGUIApp/NiceGUIApp
+
+      - name: Upload Ubuntu artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NiceGUIApp-ubuntu
+          path: dist/NiceGUIApp/
+          retention-days: 30
+
+  # ── Windows build ───────────────────────────────────────────────────────────
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build with PyInstaller
+        run: pyinstaller build.spec --clean
+
+      - name: Smoke-test binary exists
+        run: Test-Path dist\NiceGUIApp\NiceGUIApp.exe
+        shell: pwsh
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NiceGUIApp-windows
+          path: dist\NiceGUIApp\
+          retention-days: 30
+
+  # ── Package both into a release on version tags ──────────────────────────────
+  release:
+    needs: [build-ubuntu, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Download Ubuntu build
+        uses: actions/download-artifact@v4
+        with:
+          name: NiceGUIApp-ubuntu
+          path: release/ubuntu
+
+      - name: Download Windows build
+        uses: actions/download-artifact@v4
+        with:
+          name: NiceGUIApp-windows
+          path: release/windows
+
+      - name: Zip artifacts
+        run: |
+          cd release
+          zip -r NiceGUIApp-ubuntu.zip ubuntu/
+          zip -r NiceGUIApp-windows.zip windows/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/NiceGUIApp-ubuntu.zip
+            release/NiceGUIApp-windows.zip
+          generate_release_notes: true
