@@ -3,57 +3,72 @@ name: Build Desktop Executables
 on:
   push:
     branches: [main, master]
-  workflow_dispatch:  # allow manual trigger from GitHub UI
+  workflow_dispatch:
 
 jobs:
-  # ── Ubuntu build ────────────────────────────────────────────────────────────
+  # ── Ubuntu build ─────────────────────────────────────────────────────────────
   build-ubuntu:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install system deps (GTK / WebKit for pywebview)
+      - name: Install system deps (GTK / WebKit / PyGObject)
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y \
             libgtk-3-dev \
             libwebkit2gtk-4.0-dev \
             gir1.2-webkit2-4.0 \
-            python3-gi \
-            python3-gi-cairo \
             libgirepository1.0-dev \
             gcc libcairo2-dev pkg-config \
+            python3-gi \
+            python3-gi-cairo \
             xvfb
+
+      # Use the system Python that already has gi installed (python3-gi from apt)
+      # and layer our pip packages on top via --system-site-packages
+      - name: Set up Python (system-linked venv)
+        run: |
+          python3 -m venv --system-site-packages .venv
+          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
 
       - name: Install Python deps
         run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          # PyGObject must be installed into the pip env too for PyInstaller hooks
-          pip install PyGObject
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install -r requirements.txt
+
+      - name: Verify gi is importable
+        run: .venv/bin/python -c "import gi; print('gi OK:', gi.__version__)"
 
       - name: Build with PyInstaller
-        run: pyinstaller build.spec --clean
+        run: |
+          .venv/bin/pyinstaller "${{ github.workspace }}/build.spec" \
+            --clean \
+            --distpath "${{ github.workspace }}/dist" \
+            --workpath "${{ github.workspace }}/build"
 
       - name: Smoke-test binary exists
-        run: test -f dist/NiceGUIApp/NiceGUIApp
+        run: test -f "${{ github.workspace }}/dist/NiceGUIApp/NiceGUIApp"
 
       - name: Upload Ubuntu artifact
         uses: actions/upload-artifact@v4
         with:
           name: NiceGUIApp-ubuntu
-          path: dist/NiceGUIApp/
+          path: ${{ github.workspace }}/dist/NiceGUIApp/
           retention-days: 30
 
-  # ── Windows build ───────────────────────────────────────────────────────────
+  # ── Windows build ─────────────────────────────────────────────────────────────
   build-windows:
     runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -69,20 +84,24 @@ jobs:
           pip install -r requirements.txt
 
       - name: Build with PyInstaller
-        run: pyinstaller build.spec --clean
+        run: |
+          pyinstaller "${{ github.workspace }}\build.spec" `
+            --clean `
+            --distpath "${{ github.workspace }}\dist" `
+            --workpath "${{ github.workspace }}\build"
 
       - name: Smoke-test binary exists
-        run: Test-Path dist\NiceGUIApp\NiceGUIApp.exe
+        run: Test-Path "${{ github.workspace }}\dist\NiceGUIApp\NiceGUIApp.exe"
         shell: pwsh
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: NiceGUIApp-windows
-          path: dist\NiceGUIApp\
+          path: ${{ github.workspace }}\dist\NiceGUIApp\
           retention-days: 30
 
-  # ── Package both into a release on version tags ──────────────────────────────
+  # ── Release on version tags ───────────────────────────────────────────────────
   release:
     needs: [build-ubuntu, build-windows]
     runs-on: ubuntu-latest
