@@ -128,10 +128,26 @@ jobs:
           zip -r NiceGUIApp-ubuntu.zip ubuntu/
           zip -r NiceGUIApp-windows.zip windows/
 
+      - name: Checkout (for CHANGELOG)
+        uses: actions/checkout@v4
+
+      - name: Extract release notes from CHANGELOG.md
+        id: changelog
+        run: |
+          # Pull out the block for this tag between its heading and the next
+          TAG=${GITHUB_REF_NAME}
+          NOTES=$(awk "/^## \[?${TAG}\]?/{found=1; next} found && /^## /{exit} found{print}" CHANGELOG.md)
+          if [ -z "$NOTES" ]; then
+            NOTES="No changelog entry found for ${TAG}."
+          fi
+          # Write to a file to preserve newlines
+          echo "$NOTES" > /tmp/release_notes.md
+          echo "notes_file=/tmp/release_notes.md" >> $GITHUB_OUTPUT
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             release/NiceGUIApp-ubuntu.zip
             release/NiceGUIApp-windows.zip
-          generate_release_notes: true
+          body_path: ${{ steps.changelog.outputs.notes_file }}
