@@ -112,6 +112,8 @@ jobs:
     steps:
       - name: Checkout (for CHANGELOG)
         uses: actions/checkout@v4
+        with:
+          path: repo
 
       - name: Download Ubuntu build
         uses: actions/download-artifact@v4
@@ -134,13 +136,11 @@ jobs:
       - name: Extract release notes from CHANGELOG.md
         id: changelog
         run: |
-          # Pull out the block for this tag between its heading and the next
           TAG=${GITHUB_REF_NAME}
-          NOTES=$(awk "/^## \[?${TAG}\]?/{found=1; next} found && /^## /{exit} found{print}" ${{ github.workspace }}/CHANGELOG.md)
+          NOTES=$(awk "/^## \[?${TAG}\]?/{found=1; next} found && /^## /{exit} found{print}" repo/CHANGELOG.md)
           if [ -z "$NOTES" ]; then
             NOTES="No changelog entry found for ${TAG}."
           fi
-          # Write to a file to preserve newlines
           echo "$NOTES" > /tmp/release_notes.md
           echo "notes_file=/tmp/release_notes.md" >> $GITHUB_OUTPUT
 
